@@ -22,7 +22,7 @@ import android.webkit.WebViewClient;
 public class MainActivity extends Activity {
 
     private static final String TARGET_URL = "http://192.168.1.144:6278";
-    // 伪装为 Windows 10 桌面版 Chrome 浏览器 User-Agent，绕过移动端/TV端 UA 检测
+    // 伪装为 Windows 10 桌面版 Chrome 浏览器 User-Agent
     private static final String DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
     private WebView webView;
@@ -38,7 +38,7 @@ public class MainActivity extends Activity {
                 WindowManager.LayoutParams.FLAG_FULLSCREEN,
                 WindowManager.LayoutParams.FLAG_FULLSCREEN
         );
-        // 保持电视屏幕常亮，防止看板息屏或进入屏保
+        // 保持电视屏幕常亮
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
         webView = new WebView(this);
@@ -52,15 +52,32 @@ public class MainActivity extends Activity {
         webView.setVerticalScrollBarEnabled(false);
         webView.setHorizontalScrollBarEnabled(false);
 
+        // 【关键修复】Android TV 的逻辑分辨率通常为 960x540 (200% 缩放)，
+        // 导致带有 <meta name="viewport" content="width=device-width"> 的网页（如 Glance）
+        // 识别宽度只有 960px，从而强制触发手机端单列/双列布局及网页底部的移动导航栏。
+        // 这里通过屏幕物理宽度自动按 1920px 桌面基准计算初始缩放比（例如 960px 屏幕自动设为 50%），
+        // 并注入 viewport 覆盖脚本，确保在任何电视上都 100% 呈现 1920x1080 完整桌面多列视图。
+        int screenWidthPx = getResources().getDisplayMetrics().widthPixels;
+        int initialScale = Math.round((screenWidthPx / 1920f) * 100f);
+        if (initialScale <= 0 || initialScale > 100) {
+            initialScale = 100;
+        }
+        webView.setInitialScale(initialScale);
+
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
 
-        // 设置桌面端 UA 并启用桌面宽视口模式
+        // 设置桌面端 UA 并启用宽视口模式
         settings.setUserAgentString(DESKTOP_UA);
         settings.setUseWideViewPort(true);
         settings.setLoadWithOverviewMode(true);
+        settings.setSupportZoom(true);
+        settings.setBuiltInZoomControls(false);
+        settings.setDisplayZoomControls(false);
+        // 固定文本缩放为 100%，防止电视系统字体放大破坏网页排版
+        settings.setTextZoom(100);
 
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
@@ -72,15 +89,25 @@ public class MainActivity extends Activity {
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                // 锁定固定地址，不允许跳转到外部其他网址
                 return false;
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                // 强制将网页 meta viewport 宽度改写为 1920，彻底阻止网页因为 width=device-width 进入移动端/底部导航栏模式
+                String js = "javascript:(function(){" +
+                        "var meta = document.querySelector('meta[name="viewport"]');" +
+                        "if(meta){ meta.setAttribute('content', 'width=1920, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'); }" +
+                        "else { var m = document.createElement('meta'); m.name = 'viewport'; m.content = 'width=1920, initial-scale=1.0'; document.head.appendChild(m); }" +
+                        "})();";
+                view.evaluateJavascript(js, null);
             }
 
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 super.onReceivedError(view, request, error);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && request.isForMainFrame()) {
-                    // 若局域网服务暂时未就绪，5秒后自动重连
                     retryHandler.postDelayed(() -> {
                         if (webView != null) {
                             webView.loadUrl(TARGET_URL);
@@ -93,7 +120,6 @@ public class MainActivity extends Activity {
         webView.setWebChromeClient(new WebChromeClient());
 
         setContentView(webView);
-        // 注意：必须在 setContentView 之后调用，并监听系统栏变化以彻底隐藏底部虚拟导航栏
         hideSystemUI();
 
         webView.loadUrl(TARGET_URL);
@@ -111,7 +137,6 @@ public class MainActivity extends Activity {
                 );
             }
         }
-        // 同时保留传统 Flags 兼容旧版系统及魔改 TV ROM，并监听可见性变化一旦弹出立即隐藏
         final View decorView = window.getDecorView();
         final int flags = View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                 | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
