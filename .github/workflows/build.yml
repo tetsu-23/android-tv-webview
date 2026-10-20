@@ -32,5 +32,5 @@ jobs:
         with:
           name: com.tetsu.glance-tv-apk
           path: |
-            app/build/outputs/apk/debug/*.apk
-            app/build/outputs/apk/release/*.apk
+            com.tetsu.glance_tv_project/app/build/outputs/apk/debug/*.apk
+            com.tetsu.glance_tv_project/app/build/outputs/apk/release/*.apk
