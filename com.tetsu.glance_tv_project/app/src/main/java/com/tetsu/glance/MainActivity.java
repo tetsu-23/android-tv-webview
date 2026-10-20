@@ -97,7 +97,7 @@ public class MainActivity extends Activity {
                 super.onPageFinished(view, url);
                 // 强制将网页 meta viewport 宽度改写为 1920，彻底阻止网页因为 width=device-width 进入移动端/底部导航栏模式
                 String js = "javascript:(function(){" +
-                        "var meta = document.querySelector('meta[name="viewport"]');" +
+                        "var meta = document.querySelector('meta[name=viewport]');" +
                         "if(meta){ meta.setAttribute('content', 'width=1920, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'); }" +
                         "else { var m = document.createElement('meta'); m.name = 'viewport'; m.content = 'width=1920, initial-scale=1.0'; document.head.appendChild(m); }" +
                         "})();";
